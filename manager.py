@@ -10,19 +10,24 @@ from src.plugin_system.base_plugin import BasePlugin
 class FlipClockPlugin(BasePlugin):
     """128x32-friendly clock with split-flap minute/hour transitions."""
 
-    def __init__(self, plugin_dir, config, display_manager, *args, **kwargs):
-        super().__init__(plugin_dir, config, display_manager, *args, **kwargs)
+    def __init__(self, plugin_id, config, display_manager, cache_manager, plugin_manager):
+        super().__init__(plugin_id, config, display_manager, cache_manager, plugin_manager)
         self._last_dt = None
         self._last_minute_key = None
-        self._load_config()
+        self._load_config(config)
+        self.logger.info("Flip Clock plugin initialized")
 
-    def _load_config(self):
-        config = self.config or {}
+    def _load_config(self, config):
+        config = config or {}
         self.use_24_hour = bool(config.get("use_24_hour", True))
         self.show_weekday = bool(config.get("show_weekday", True))
         self.date_uppercase = bool(config.get("date_uppercase", True))
         self.animation_ms = max(120, min(900, int(config.get("animation_ms", 420))))
         self.animation_frames = max(3, min(10, int(config.get("animation_frames", 7))))
+
+    def on_config_change(self, new_config):
+        super().on_config_change(new_config)
+        self._load_config(self.config)
 
     def get_update_interval(self):
         return 1
@@ -50,13 +55,27 @@ class FlipClockPlugin(BasePlugin):
                 pass
         return ImageFont.load_default()
 
+    def _now(self):
+        try:
+            config_manager = getattr(self.plugin_manager, "config_manager", None)
+            tz_name = config_manager.get_timezone() if config_manager else None
+            if tz_name:
+                try:
+                    import pytz
+                    return datetime.now(pytz.timezone(tz_name))
+                except (ImportError, Exception):
+                    pass
+        except Exception as exc:
+            self.logger.warning("Could not resolve LEDMatrix timezone: %s", exc)
+        return datetime.now()
+
     def _time_text(self, dt):
         if self.use_24_hour:
             return dt.strftime("%H:%M")
         return dt.strftime("%I:%M").lstrip("0")
 
     def _layout(self):
-        width, height = self._size
+        width, _ = self._size
         date_width = 46 if width >= 120 else max(34, width // 3)
         gutter = 3
         divider_x = width - date_width - gutter
@@ -78,22 +97,18 @@ class FlipClockPlugin(BasePlugin):
     def _draw_date(self, draw, dt, x, width, height):
         primary = (235, 235, 235)
         secondary = (150, 150, 150)
-        small = self._font(7, bold=False, mono=False)
-        medium = self._font(8, bold=True, mono=False)
-
+        small = self._font(7)
+        medium = self._font(8, bold=True)
         weekday = dt.strftime("%a")
         day_month = dt.strftime("%d %b")
         year = dt.strftime("%Y")
         if self.date_uppercase:
             weekday, day_month = weekday.upper(), day_month.upper()
-
         rows = []
         if self.show_weekday:
             rows.append((weekday, small, secondary))
         rows.extend([(day_month, medium, primary), (year, small, secondary)])
-
-        total = len(rows) * 9
-        y = max(0, (height - total) // 2)
+        y = max(0, (height - len(rows) * 9) // 2)
         for text, font, colour in rows:
             draw.text((x, y), text, font=font, fill=colour)
             y += 9
@@ -140,39 +155,33 @@ class FlipClockPlugin(BasePlugin):
         y, new_positions = self._time_geometry(new_text, draw, font, time_right, image.height)
         _, old_positions = self._time_geometry(old_text, draw, font, time_right, image.height)
         hinge = image.height // 2
-
-        for idx, ((new_ch, nx), (old_ch, ox)) in enumerate(zip(new_positions, old_positions)):
+        for (new_ch, nx), (old_ch, ox) in zip(new_positions, old_positions):
             x = nx
             if old_ch == new_ch:
                 draw.text((x, y), new_ch, font=font, fill="white")
                 continue
-
             cell_w = max(1, int(draw.textlength(new_ch if new_ch.strip() else "0", font=font)) + 1)
             old_layer = Image.new("RGB", image.size, "black")
             new_layer = Image.new("RGB", image.size, "black")
             ImageDraw.Draw(old_layer).text((ox, y), old_ch, font=font, fill="white")
             ImageDraw.Draw(new_layer).text((nx, y), new_ch, font=font, fill="white")
-
+            right = min(image.width, x + cell_w)
             if progress < 0.5:
-                image.paste(old_layer.crop((x, hinge, min(image.width, x + cell_w), image.height)), (x, hinge))
+                image.paste(old_layer.crop((x, hinge, right, image.height)), (x, hinge))
                 factor = max(0.03, 1.0 - progress * 2.0)
-                upper = old_layer.crop((x, 0, min(image.width, x + cell_w), hinge))
+                upper = old_layer.crop((x, 0, right, hinge))
                 upper = upper.resize((upper.width, max(1, int(hinge * factor))))
                 image.paste(upper, (x, hinge - upper.height))
             else:
-                image.paste(new_layer.crop((x, 0, min(image.width, x + cell_w), hinge)), (x, 0))
+                image.paste(new_layer.crop((x, 0, right, hinge)), (x, 0))
                 factor = max(0.03, (progress - 0.5) * 2.0)
-                lower = new_layer.crop((x, hinge, min(image.width, x + cell_w), image.height))
+                lower = new_layer.crop((x, hinge, right, image.height))
                 lower = lower.resize((lower.width, max(1, int((image.height - hinge) * factor))))
                 image.paste(lower, (x, hinge))
-
             ImageDraw.Draw(image).line((x, hinge, min(image.width - 1, x + cell_w), hinge), fill=(70, 70, 70))
-
         return image
 
     def _push(self, image):
-        # Preserve DisplayManager's existing image object because its draw context may
-        # be bound to it. Pasting is safer than replacing display_manager.image.
         self.display_manager.image.paste(image, (0, 0))
         self.display_manager.update_display()
 
@@ -183,20 +192,20 @@ class FlipClockPlugin(BasePlugin):
             time.sleep(delay)
 
     def display(self, force_clear=False):
-        now = datetime.now()
-        minute_key = now.strftime("%Y%m%d%H%M")
-
-        if self._last_minute_key and minute_key != self._last_minute_key and self._last_dt:
-            # Animate normal minute boundaries. If the plugin has been away for a
-            # while, jump straight to current time rather than flipping stale time.
-            elapsed = abs((now - self._last_dt).total_seconds())
-            if elapsed <= 90:
-                self._animate_flip(self._last_dt, now)
+        try:
+            now = self._now()
+            minute_key = now.strftime("%Y%m%d%H%M")
+            if self._last_minute_key and minute_key != self._last_minute_key and self._last_dt:
+                elapsed = abs((now - self._last_dt).total_seconds())
+                if elapsed <= 90:
+                    self._animate_flip(self._last_dt, now)
+                else:
+                    self._push(self._render_static(now))
             else:
                 self._push(self._render_static(now))
-        else:
-            self._push(self._render_static(now))
-
-        self._last_dt = now
-        self._last_minute_key = minute_key
-        return True
+            self._last_dt = now
+            self._last_minute_key = minute_key
+            return True
+        except Exception as exc:
+            self.logger.error("Flip Clock display failed: %s", exc, exc_info=True)
+            return False
