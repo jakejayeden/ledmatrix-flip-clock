@@ -1,0 +1,48 @@
+{
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "default": true
+    },
+    "use_24_hour": {
+      "type": "boolean",
+      "title": "24-hour clock",
+      "default": true
+    },
+    "show_weekday": {
+      "type": "boolean",
+      "title": "Show weekday",
+      "default": true
+    },
+    "date_uppercase": {
+      "type": "boolean",
+      "title": "Uppercase date",
+      "default": true
+    },
+    "animation_ms": {
+      "type": "integer",
+      "title": "Flip duration (ms)",
+      "default": 420,
+      "minimum": 120,
+      "maximum": 900
+    },
+    "animation_frames": {
+      "type": "integer",
+      "title": "Animation frames",
+      "default": 7,
+      "minimum": 3,
+      "maximum": 10
+    },
+    "display_duration": {
+      "type": "number",
+      "title": "Display duration (seconds)",
+      "default": 60,
+      "minimum": 5,
+      "maximum": 3600
+    }
+  },
+  "required": ["enabled"],
+  "additionalProperties": false
+}
