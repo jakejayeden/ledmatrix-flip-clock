@@ -14,7 +14,7 @@
     "show_seconds": {
       "type": "boolean",
       "title": "Display seconds instead of date",
-      "description": "When enabled, the right-hand date section is replaced by seconds.",
+      "description": "When enabled, the display becomes a cohesive HH:MM:SS flip clock and the date section is hidden.",
       "default": false
     },
     "date_uppercase": {
@@ -39,15 +39,15 @@
     "animation_ms": {
       "type": "integer",
       "title": "Flip duration (ms)",
-      "default": 420,
-      "minimum": 120,
+      "default": 220,
+      "minimum": 80,
       "maximum": 900
     },
     "animation_frames": {
       "type": "integer",
       "title": "Animation frames",
-      "default": 7,
-      "minimum": 3,
+      "default": 4,
+      "minimum": 2,
       "maximum": 10
     },
     "display_duration": {
