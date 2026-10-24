@@ -39,7 +39,7 @@
     "animation_ms": {
       "type": "integer",
       "title": "Flip duration (ms)",
-      "default": 220,
+      "default": 100,
       "minimum": 80,
       "maximum": 900
     },
