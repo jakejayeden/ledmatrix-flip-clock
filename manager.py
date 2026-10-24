@@ -41,7 +41,7 @@ class FlipClockPlugin(BasePlugin):
         self.show_seconds = bool(config.get("show_seconds", False))
         self.date_uppercase = bool(config.get("date_uppercase", True))
         self.date_color = self._colour(config.get("date_color", [235, 235, 235]))
-        self.animation_ms = max(80, min(900, int(config.get("animation_ms", 220))))
+        self.animation_ms = max(80, min(900, int(config.get("animation_ms", 100))))
         self.animation_frames = max(2, min(10, int(config.get("animation_frames", 4))))
 
     def on_config_change(self, new_config):
@@ -50,7 +50,11 @@ class FlipClockPlugin(BasePlugin):
         self._last_time_key = None
 
     def get_update_interval(self):
-        return 1
+        # Poll twice per second in seconds mode. A one-second poll plus the
+        # blocking flip animation slowly drifts and eventually misses a second.
+        # 500 ms gives us enough headroom to observe every wall-clock boundary
+        # while the displayed value still comes directly from the system clock.
+        return 0.5 if self.show_seconds else 1
 
     def update(self):
         return None
@@ -214,10 +218,17 @@ class FlipClockPlugin(BasePlugin):
         self.display_manager.update_display()
 
     def _animate_flip(self, old_dt, new_dt):
-        delay = (self.animation_ms / 1000.0) / self.animation_frames
+        # Pace frames against a monotonic deadline rather than repeatedly
+        # sleeping a fixed amount. Rendering time therefore does not accumulate
+        # into the animation duration and push the seconds clock further behind.
+        duration = self.animation_ms / 1000.0
+        started = time.monotonic()
         for frame in range(1, self.animation_frames + 1):
             self._push(self._render_flip_frame(old_dt, new_dt, frame / self.animation_frames))
-            time.sleep(delay)
+            deadline = started + duration * (frame / self.animation_frames)
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(remaining)
 
     def display(self, force_clear=False):
         try:
@@ -225,9 +236,19 @@ class FlipClockPlugin(BasePlugin):
             time_key = now.strftime("%Y%m%d%H%M%S" if self.show_seconds else "%Y%m%d%H%M")
             if self._last_time_key and time_key != self._last_time_key and self._last_dt:
                 elapsed = abs((now - self._last_dt).total_seconds())
-                max_elapsed = 2.5 if self.show_seconds else 90
+                max_elapsed = 1.5 if self.show_seconds else 90
                 if elapsed <= max_elapsed:
                     self._animate_flip(self._last_dt, now)
+                    # Always finish on a fresh wall-clock sample. This prevents
+                    # animation/render time from leaving the displayed seconds
+                    # fractionally behind the actual system clock.
+                    if self.show_seconds:
+                        synced_now = self._now()
+                        synced_key = synced_now.strftime("%Y%m%d%H%M%S")
+                        if synced_key != time_key:
+                            self._push(self._render_static(synced_now))
+                            now = synced_now
+                            time_key = synced_key
                 else:
                     self._push(self._render_static(now))
             else:
