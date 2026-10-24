@@ -207,7 +207,6 @@ class FlipClockPlugin(BasePlugin):
                 lower = new_layer.crop((x, hinge, right, image.height))
                 lower = lower.resize((lower.width, max(1, int((image.height - hinge) * factor))))
                 image.paste(lower, (x, hinge))
-            ImageDraw.Draw(image).line((x, hinge, min(image.width - 1, x + cell_w), hinge), fill=(70, 70, 70))
         return image
 
     def _push(self, image):
