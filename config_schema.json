@@ -17,11 +17,18 @@
       "default": true
     },
     "date_color": {
-      "type": "string",
+      "type": "array",
       "title": "Date colour",
-      "description": "Hex colour for the weekday and day/month text, for example #00FFFF.",
-      "default": "#EBEBEB",
-      "pattern": "^#[0-9A-Fa-f]{6}$"
+      "description": "Colour for the weekday and day/month text.",
+      "x-widget": "color-picker",
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255
+      },
+      "minItems": 3,
+      "maxItems": 3,
+      "default": [235, 235, 235]
     },
     "animation_ms": {
       "type": "integer",
