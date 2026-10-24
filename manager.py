@@ -19,8 +19,6 @@ class FlipClockPlugin(BasePlugin):
 
     @staticmethod
     def _colour(value, fallback=(235, 235, 235)):
-        # Current WebUI colour pickers store RGB as [R, G, B]. Keep support for
-        # the previous hex-string setting so existing configs upgrade cleanly.
         if isinstance(value, (list, tuple)) and len(value) == 3:
             try:
                 rgb = tuple(int(channel) for channel in value)
@@ -40,6 +38,7 @@ class FlipClockPlugin(BasePlugin):
     def _load_config(self, config):
         config = config or {}
         self.use_24_hour = bool(config.get("use_24_hour", True))
+        self.show_seconds = bool(config.get("show_seconds", False))
         self.date_uppercase = bool(config.get("date_uppercase", True))
         self.date_color = self._colour(config.get("date_color", [235, 235, 235]))
         self.animation_ms = max(120, min(900, int(config.get("animation_ms", 420))))
@@ -129,13 +128,32 @@ class FlipClockPlugin(BasePlugin):
             draw.text((x, y), text, font=font, fill=self.date_color)
             y += row_height
 
+    def _draw_seconds(self, draw, dt, x, width, height):
+        text = dt.strftime("%S")
+        # Seconds occupy the same rail as the date. Use a large clean sans face
+        # so the two digits visually balance the main HH:MM clock.
+        for size in range(height, 7, -1):
+            font = self._font(size, bold=True, mono=False)
+            bbox = draw.textbbox((0, 0), text, font=font)
+            if bbox[2] - bbox[0] <= width and bbox[3] - bbox[1] <= height:
+                break
+        bbox = draw.textbbox((0, 0), text, font=font)
+        tw = bbox[2] - bbox[0]
+        tx = x + max(0, (width - tw) // 2 - bbox[0])
+        ty = self._centered_y(draw, text, font, height)
+        draw.text((tx, ty), text, font=font, fill="white")
+
     def _base_canvas(self, dt):
         width, height = self._size
         image = Image.new("RGB", (width, height), "black")
         draw = ImageDraw.Draw(image)
-        divider_x, _, date_x = self._layout()
+        divider_x, _, rail_x = self._layout()
         draw.line((divider_x, 4, divider_x, height - 5), fill=(55, 55, 55))
-        self._draw_date(draw, dt, date_x, width - date_x, height)
+        rail_width = width - rail_x
+        if self.show_seconds:
+            self._draw_seconds(draw, dt, rail_x, rail_width, height)
+        else:
+            self._draw_date(draw, dt, rail_x, rail_width, height)
         return image
 
     def _time_geometry(self, text, draw, font, box_width, height):
