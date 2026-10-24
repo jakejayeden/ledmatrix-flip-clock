@@ -11,6 +11,12 @@
       "title": "24-hour clock",
       "default": true
     },
+    "show_seconds": {
+      "type": "boolean",
+      "title": "Display seconds instead of date",
+      "description": "When enabled, the right-hand date section is replaced by seconds.",
+      "default": false
+    },
     "date_uppercase": {
       "type": "boolean",
       "title": "Uppercase date",
