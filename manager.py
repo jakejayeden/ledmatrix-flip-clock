@@ -17,11 +17,22 @@ class FlipClockPlugin(BasePlugin):
         self._load_config(config)
         self.logger.info("Flip Clock plugin initialized")
 
+    @staticmethod
+    def _hex_colour(value, fallback=(235, 235, 235)):
+        if isinstance(value, str):
+            value = value.strip().lstrip("#")
+            if len(value) == 6:
+                try:
+                    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+                except ValueError:
+                    pass
+        return fallback
+
     def _load_config(self, config):
         config = config or {}
         self.use_24_hour = bool(config.get("use_24_hour", True))
-        self.show_weekday = bool(config.get("show_weekday", True))
         self.date_uppercase = bool(config.get("date_uppercase", True))
+        self.date_color = self._hex_colour(config.get("date_color", "#EBEBEB"))
         self.animation_ms = max(120, min(900, int(config.get("animation_ms", 420))))
         self.animation_frames = max(3, min(10, int(config.get("animation_frames", 7))))
 
@@ -63,7 +74,7 @@ class FlipClockPlugin(BasePlugin):
                 try:
                     import pytz
                     return datetime.now(pytz.timezone(tz_name))
-                except (ImportError, Exception):
+                except Exception:
                     pass
         except Exception as exc:
             self.logger.warning("Could not resolve LEDMatrix timezone: %s", exc)
@@ -82,9 +93,6 @@ class FlipClockPlugin(BasePlugin):
         return divider_x, divider_x - 2, divider_x + gutter + 1
 
     def _fit_time_font(self, box_width, height):
-        # DejaVu Sans Mono uses a dotted zero. The regular Sans Bold face has
-        # clean, open zero counters while retaining tabular-width numerals, so
-        # the clock remains aligned without the centre dots.
         for size in range(height, 7, -1):
             font = self._font(size, bold=True, mono=False)
             bbox = font.getbbox("88:88")
@@ -98,23 +106,22 @@ class FlipClockPlugin(BasePlugin):
         return (height - (bbox[3] - bbox[1])) // 2 - bbox[1]
 
     def _draw_date(self, draw, dt, x, width, height):
-        primary = (235, 235, 235)
-        secondary = (150, 150, 150)
-        small = self._font(7)
-        medium = self._font(8, bold=True)
+        # Two-line date rail: weekday on top, day/month below. The same user
+        # selected colour is used for the entire date side.
+        weekday_font = self._font(8, bold=True)
+        date_font = self._font(8, bold=True)
         weekday = dt.strftime("%a")
         day_month = dt.strftime("%d %b")
-        year = dt.strftime("%Y")
         if self.date_uppercase:
-            weekday, day_month = weekday.upper(), day_month.upper()
-        rows = []
-        if self.show_weekday:
-            rows.append((weekday, small, secondary))
-        rows.extend([(day_month, medium, primary), (year, small, secondary)])
-        y = max(0, (height - len(rows) * 9) // 2)
-        for text, font, colour in rows:
-            draw.text((x, y), text, font=font, fill=colour)
-            y += 9
+            weekday = weekday.upper()
+            day_month = day_month.upper()
+
+        rows = [(weekday, weekday_font), (day_month, date_font)]
+        row_height = 11
+        y = max(0, (height - len(rows) * row_height) // 2)
+        for text, font in rows:
+            draw.text((x, y), text, font=font, fill=self.date_color)
+            y += row_height
 
     def _base_canvas(self, dt):
         width, height = self._size
