@@ -18,7 +18,16 @@ class FlipClockPlugin(BasePlugin):
         self.logger.info("Flip Clock plugin initialized")
 
     @staticmethod
-    def _hex_colour(value, fallback=(235, 235, 235)):
+    def _colour(value, fallback=(235, 235, 235)):
+        # Current WebUI colour pickers store RGB as [R, G, B]. Keep support for
+        # the previous hex-string setting so existing configs upgrade cleanly.
+        if isinstance(value, (list, tuple)) and len(value) == 3:
+            try:
+                rgb = tuple(int(channel) for channel in value)
+                if all(0 <= channel <= 255 for channel in rgb):
+                    return rgb
+            except (TypeError, ValueError):
+                pass
         if isinstance(value, str):
             value = value.strip().lstrip("#")
             if len(value) == 6:
@@ -32,7 +41,7 @@ class FlipClockPlugin(BasePlugin):
         config = config or {}
         self.use_24_hour = bool(config.get("use_24_hour", True))
         self.date_uppercase = bool(config.get("date_uppercase", True))
-        self.date_color = self._hex_colour(config.get("date_color", "#EBEBEB"))
+        self.date_color = self._colour(config.get("date_color", [235, 235, 235]))
         self.animation_ms = max(120, min(900, int(config.get("animation_ms", 420))))
         self.animation_frames = max(3, min(10, int(config.get("animation_frames", 7))))
 
@@ -106,8 +115,6 @@ class FlipClockPlugin(BasePlugin):
         return (height - (bbox[3] - bbox[1])) // 2 - bbox[1]
 
     def _draw_date(self, draw, dt, x, width, height):
-        # Two-line date rail: weekday on top, day/month below. The same user
-        # selected colour is used for the entire date side.
         weekday_font = self._font(8, bold=True)
         date_font = self._font(8, bold=True)
         weekday = dt.strftime("%a")
@@ -115,7 +122,6 @@ class FlipClockPlugin(BasePlugin):
         if self.date_uppercase:
             weekday = weekday.upper()
             day_month = day_month.upper()
-
         rows = [(weekday, weekday_font), (day_month, date_font)]
         row_height = 11
         y = max(0, (height - len(rows) * row_height) // 2)
