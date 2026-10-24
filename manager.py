@@ -130,8 +130,6 @@ class FlipClockPlugin(BasePlugin):
 
     def _draw_seconds(self, draw, dt, x, width, height):
         text = dt.strftime("%S")
-        # Seconds occupy the same rail as the date. Use a large clean sans face
-        # so the two digits visually balance the main HH:MM clock.
         for size in range(height, 7, -1):
             font = self._font(size, bold=True, mono=False)
             bbox = draw.textbbox((0, 0), text, font=font)
@@ -143,16 +141,28 @@ class FlipClockPlugin(BasePlugin):
         ty = self._centered_y(draw, text, font, height)
         draw.text((tx, ty), text, font=font, fill="white")
 
+    def _draw_seconds_colon(self, draw, x, height):
+        # Match the HH:MM separator: two bright dots centred vertically between
+        # minutes and seconds, instead of the date-mode divider line.
+        radius = 1
+        dot_x = x
+        for dot_y in (height // 2 - 5, height // 2 + 5):
+            draw.ellipse(
+                (dot_x - radius, dot_y - radius, dot_x + radius, dot_y + radius),
+                fill="white",
+            )
+
     def _base_canvas(self, dt):
         width, height = self._size
         image = Image.new("RGB", (width, height), "black")
         draw = ImageDraw.Draw(image)
         divider_x, _, rail_x = self._layout()
-        draw.line((divider_x, 4, divider_x, height - 5), fill=(55, 55, 55))
         rail_width = width - rail_x
         if self.show_seconds:
+            self._draw_seconds_colon(draw, divider_x + 1, height)
             self._draw_seconds(draw, dt, rail_x, rail_width, height)
         else:
+            draw.line((divider_x, 4, divider_x, height - 5), fill=(55, 55, 55))
             self._draw_date(draw, dt, rail_x, rail_width, height)
         return image
 
