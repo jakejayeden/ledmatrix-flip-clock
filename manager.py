@@ -8,12 +8,12 @@ from src.plugin_system.base_plugin import BasePlugin
 
 
 class FlipClockPlugin(BasePlugin):
-    """128x32-friendly clock with split-flap minute/hour transitions."""
+    """128x32-friendly clock with split-flap time transitions."""
 
     def __init__(self, plugin_id, config, display_manager, cache_manager, plugin_manager):
         super().__init__(plugin_id, config, display_manager, cache_manager, plugin_manager)
         self._last_dt = None
-        self._last_minute_key = None
+        self._last_time_key = None
         self._load_config(config)
         self.logger.info("Flip Clock plugin initialized")
 
@@ -41,12 +41,13 @@ class FlipClockPlugin(BasePlugin):
         self.show_seconds = bool(config.get("show_seconds", False))
         self.date_uppercase = bool(config.get("date_uppercase", True))
         self.date_color = self._colour(config.get("date_color", [235, 235, 235]))
-        self.animation_ms = max(120, min(900, int(config.get("animation_ms", 420))))
-        self.animation_frames = max(3, min(10, int(config.get("animation_frames", 7))))
+        self.animation_ms = max(80, min(900, int(config.get("animation_ms", 220))))
+        self.animation_frames = max(2, min(10, int(config.get("animation_frames", 4))))
 
     def on_config_change(self, new_config):
         super().on_config_change(new_config)
         self._load_config(self.config)
+        self._last_time_key = None
 
     def get_update_interval(self):
         return 1
@@ -90,8 +91,9 @@ class FlipClockPlugin(BasePlugin):
 
     def _time_text(self, dt):
         if self.use_24_hour:
-            return dt.strftime("%H:%M")
-        return dt.strftime("%I:%M").lstrip("0")
+            return dt.strftime("%H:%M:%S" if self.show_seconds else "%H:%M")
+        text = dt.strftime("%I:%M:%S" if self.show_seconds else "%I:%M")
+        return text.lstrip("0")
 
     def _layout(self):
         width, _ = self._size
@@ -100,10 +102,18 @@ class FlipClockPlugin(BasePlugin):
         divider_x = width - date_width - gutter
         return divider_x, divider_x - 2, divider_x + gutter + 1
 
-    def _fit_time_font(self, box_width, height):
+    def _time_box_width(self):
+        width, _ = self._size
+        if self.show_seconds:
+            return width
+        _, time_right, _ = self._layout()
+        return time_right
+
+    def _fit_time_font(self, box_width, height, sample=None):
+        sample = sample or ("88:88:88" if self.show_seconds else "88:88")
         for size in range(height, 7, -1):
             font = self._font(size, bold=True, mono=False)
-            bbox = font.getbbox("88:88")
+            bbox = font.getbbox(sample)
             if bbox[2] - bbox[0] <= box_width and bbox[3] - bbox[1] <= height:
                 return font
         return self._font(8, bold=True, mono=False)
@@ -128,42 +138,14 @@ class FlipClockPlugin(BasePlugin):
             draw.text((x, y), text, font=font, fill=self.date_color)
             y += row_height
 
-    def _draw_seconds(self, draw, dt, x, width, height):
-        text = dt.strftime("%S")
-        for size in range(height, 7, -1):
-            font = self._font(size, bold=True, mono=False)
-            bbox = draw.textbbox((0, 0), text, font=font)
-            if bbox[2] - bbox[0] <= width and bbox[3] - bbox[1] <= height:
-                break
-        bbox = draw.textbbox((0, 0), text, font=font)
-        tw = bbox[2] - bbox[0]
-        tx = x + max(0, (width - tw) // 2 - bbox[0])
-        ty = self._centered_y(draw, text, font, height)
-        draw.text((tx, ty), text, font=font, fill="white")
-
-    def _draw_seconds_colon(self, draw, x, height):
-        # Match the HH:MM separator: two bright dots centred vertically between
-        # minutes and seconds, instead of the date-mode divider line.
-        radius = 1
-        dot_x = x
-        for dot_y in (height // 2 - 5, height // 2 + 5):
-            draw.ellipse(
-                (dot_x - radius, dot_y - radius, dot_x + radius, dot_y + radius),
-                fill="white",
-            )
-
     def _base_canvas(self, dt):
         width, height = self._size
         image = Image.new("RGB", (width, height), "black")
-        draw = ImageDraw.Draw(image)
-        divider_x, _, rail_x = self._layout()
-        rail_width = width - rail_x
-        if self.show_seconds:
-            self._draw_seconds_colon(draw, divider_x + 1, height)
-            self._draw_seconds(draw, dt, rail_x, rail_width, height)
-        else:
+        if not self.show_seconds:
+            draw = ImageDraw.Draw(image)
+            divider_x, _, rail_x = self._layout()
             draw.line((divider_x, 4, divider_x, height - 5), fill=(55, 55, 55))
-            self._draw_date(draw, dt, rail_x, rail_width, height)
+            self._draw_date(draw, dt, rail_x, width - rail_x, height)
         return image
 
     def _time_geometry(self, text, draw, font, box_width, height):
@@ -181,10 +163,10 @@ class FlipClockPlugin(BasePlugin):
     def _render_static(self, dt):
         image = self._base_canvas(dt)
         draw = ImageDraw.Draw(image)
-        _, time_right, _ = self._layout()
+        box_width = self._time_box_width()
         text = self._time_text(dt)
-        font = self._fit_time_font(time_right, image.height)
-        y, advances = self._time_geometry(text, draw, font, time_right, image.height)
+        font = self._fit_time_font(box_width, image.height)
+        y, advances = self._time_geometry(text, draw, font, box_width, image.height)
         for ch, x in advances:
             draw.text((x, y), ch, font=font, fill="white")
         return image
@@ -192,12 +174,15 @@ class FlipClockPlugin(BasePlugin):
     def _render_flip_frame(self, old_dt, new_dt, progress):
         image = self._base_canvas(new_dt)
         draw = ImageDraw.Draw(image)
-        _, time_right, _ = self._layout()
-        old_text = self._time_text(old_dt).rjust(5)
-        new_text = self._time_text(new_dt).rjust(5)
-        font = self._fit_time_font(time_right, image.height)
-        y, new_positions = self._time_geometry(new_text, draw, font, time_right, image.height)
-        _, old_positions = self._time_geometry(old_text, draw, font, time_right, image.height)
+        box_width = self._time_box_width()
+        old_text = self._time_text(old_dt)
+        new_text = self._time_text(new_dt)
+        width = max(len(old_text), len(new_text))
+        old_text = old_text.rjust(width)
+        new_text = new_text.rjust(width)
+        font = self._fit_time_font(box_width, image.height)
+        y, new_positions = self._time_geometry(new_text, draw, font, box_width, image.height)
+        _, old_positions = self._time_geometry(old_text, draw, font, box_width, image.height)
         hinge = image.height // 2
         for (new_ch, nx), (old_ch, ox) in zip(new_positions, old_positions):
             x = nx
@@ -238,17 +223,18 @@ class FlipClockPlugin(BasePlugin):
     def display(self, force_clear=False):
         try:
             now = self._now()
-            minute_key = now.strftime("%Y%m%d%H%M")
-            if self._last_minute_key and minute_key != self._last_minute_key and self._last_dt:
+            time_key = now.strftime("%Y%m%d%H%M%S" if self.show_seconds else "%Y%m%d%H%M")
+            if self._last_time_key and time_key != self._last_time_key and self._last_dt:
                 elapsed = abs((now - self._last_dt).total_seconds())
-                if elapsed <= 90:
+                max_elapsed = 2.5 if self.show_seconds else 90
+                if elapsed <= max_elapsed:
                     self._animate_flip(self._last_dt, now)
                 else:
                     self._push(self._render_static(now))
             else:
                 self._push(self._render_static(now))
             self._last_dt = now
-            self._last_minute_key = minute_key
+            self._last_time_key = time_key
             return True
         except Exception as exc:
             self.logger.error("Flip Clock display failed: %s", exc, exc_info=True)
