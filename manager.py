@@ -82,12 +82,15 @@ class FlipClockPlugin(BasePlugin):
         return divider_x, divider_x - 2, divider_x + gutter + 1
 
     def _fit_time_font(self, box_width, height):
+        # DejaVu Sans Mono uses a dotted zero. The regular Sans Bold face has
+        # clean, open zero counters while retaining tabular-width numerals, so
+        # the clock remains aligned without the centre dots.
         for size in range(height, 7, -1):
-            font = self._font(size, bold=True, mono=True)
+            font = self._font(size, bold=True, mono=False)
             bbox = font.getbbox("88:88")
             if bbox[2] - bbox[0] <= box_width and bbox[3] - bbox[1] <= height:
                 return font
-        return self._font(8, bold=True, mono=True)
+        return self._font(8, bold=True, mono=False)
 
     @staticmethod
     def _centered_y(draw, text, font, height):
