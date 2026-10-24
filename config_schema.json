@@ -11,15 +11,17 @@
       "title": "24-hour clock",
       "default": true
     },
-    "show_weekday": {
-      "type": "boolean",
-      "title": "Show weekday",
-      "default": true
-    },
     "date_uppercase": {
       "type": "boolean",
       "title": "Uppercase date",
       "default": true
+    },
+    "date_color": {
+      "type": "string",
+      "title": "Date colour",
+      "description": "Hex colour for the weekday and day/month text, for example #00FFFF.",
+      "default": "#EBEBEB",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
     },
     "animation_ms": {
       "type": "integer",
